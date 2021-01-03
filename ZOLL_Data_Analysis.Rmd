@@ -1,0 +1,305 @@
+---
+title: "*ZOLL* Data Analysis"
+author: 
+  - "**Kelle Lewis RN BSN TCRN**"
+  - "Kelle.Lewis@renown.org"
+  - "Professional Advancement for Clinical Excellence"
+  - "2020"
+output: html_document
+---
+
+```{r include=FALSE}
+
+### Initialization
+
+if (!require(pacman)) {install.packages('pacman')} #install pacman if it is not loaded
+#pacman is a package load/install handler
+library(pacman)
+
+pacman::p_load(
+  'tidyverse', # for data manipulation 
+  'ggplot2', # for exhibits
+  'lubridate', # for date manipulation
+  'ggthemes', # plot themes
+  'knitr',
+  'kableExtra',
+  'DT'
+               )
+#set wd
+setwd("C:/Users/pc/Desktop/drive_0/Desktop/Renown PACE")
+
+zollData <- read_csv("High Performance Code Team - csv export.csv") %>%
+  mutate(Date = mdy(Date)) %>%
+  arrange(Date)
+zollData <- zollData %>%
+  mutate(record = 1:nrow(zollData),
+         md = paste(str_pad(string = paste(record,"_",sep = ""),
+                            width = 4, side = "right", 
+                            pad = "_"),str_pad(string = paste(month(Date),"/",day(Date),sep = ""),width = 7 ,side = "left",
+                                               pad = "_"),sep = ""))
+
+zollData <- zollData %>%
+  mutate(md = factor(md,levels = unique(zollData$md)))
+
+```
+
+```{r include=FALSE}
+#plot functions
+
+percentBars <- function(varName, data = zollData, goal = .8, newName = NA) {
+  if(!is.na(newName)){
+    if(newName %in% names(data)){
+      data <- data %>% select(-!!as.symbol(newName))
+    }
+    data <- data %>% rename(!!as.symbol(as.name(newName)) := !!as.symbol(varName))
+    varName <- newName
+  }
+
+dataValues <- data %>% select(!!as.symbol(varName)) %>% unlist() %>% na.omit()
+
+data <- data %>% 
+  mutate(fi = if_else(!!as.symbol(varName) >= goal,"Y","N"))
+
+data %>%
+  ggplot(aes(x = md, y = !!as.symbol(varName),color = fi)) +
+  scale_colour_manual(values = c("white","springgreen3")) +
+  geom_bar(stat = "identity", fill = "dodgerblue4", alpha = .6) +
+  geom_text(aes(label = paste(round(!!as.symbol(varName)*100),"%",sep = ""), hjust = "right"), size = 2)+
+  coord_flip() +
+  labs(title = varName) + 
+  theme_classic() + 
+  theme(axis.line.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text = element_text(color = "black"),
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position = "none", )  +
+  scale_y_continuous(labels = scales::percent,
+                     limits = c(0,1),
+                     position = "right") + 
+  geom_hline(yintercept = mean(dataValues), color="grey",
+             linetype = "dashed") +
+  geom_hline(yintercept = goal, color = "springgreen3", linetype = "dashed") +
+  geom_text(aes(y = mean(dataValues), x = 0),
+            label = paste("Average = ",round(mean(dataValues)*100,2),"%",sep = ""), color = "black") + 
+  geom_text(aes(y = goal, x = length(dataValues)+1),
+            label = paste(goal*100,"% Goal",sep = ""), color = "springgreen4") + 
+  scale_x_discrete(expand = expansion(add = 1.8)) 
+}
+
+```
+
+# {.tabset .tabset-fade}
+
+## Analysis
+
+### Overview
+This analysis uses CPR case data from the *ZOLL* to evaluate code blue response efficiency. The data was collected from the SICU High Performance Code Team binder, and there are `r nrow(zollData)` CPR cases ranging from `r min(zollData$Date)` to `r max(zollData$Date)`. The primary goals of this PACE project are to:  
+    
+  * Establish a code blue performance baseline
+  * Gain insight to what areas of CPR techniques are lacking
+  * Educate fellow staff members  
+
+### Data Summary  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summaryTbl <- zollData %>%
+  summarise(`CPR Cases` = n(),
+            `Avg Compresion Depth (inches)` = round(mean(`Mean Compresion Depth`, na.rm = TRUE),2),
+            `Avg Compression Rate (comp/min)` = round(mean(`Mean Compression Rate`, na.rm = TRUE),2),
+            `Avg Time in CPR` = round(mean(`Time in CPR`, na.rm = TRUE),2),
+            `Avg Time in Compressions` = round(mean(`Time in Compressions Prop`, na.rm = TRUE),4),
+            `Avg Compressions in Target` = round(mean(`Compressions in Target`, na.rm = TRUE),4),
+            `Avg Depth in Target` = round(mean(`Depth In Target Prop`, na.rm = TRUE),4),
+            `Avg Rate in Target` = round(mean(`Rate in Target Prop`, na.rm = TRUE),4)) %>%
+  mutate(`Avg Time in CPR` = paste(floor(as.numeric(`Avg Time in CPR`)/60),":", str_pad(string = as.numeric(`Avg Time in CPR`)%%60,width = 2,side = "left",pad = "0"), sep = "")) %>%
+  rename(`Avg Time in CPR (min:sec)` = `Avg Time in CPR`)
+
+summaryTbl %>%
+  datatable(rownames = FALSE,filter = 'none',editable = FALSE,
+            options = list(
+  searching = FALSE,
+  ordering = FALSE,
+  paging = FALSE,
+  bInfo = FALSE,
+  columnDefs = list(list(className = 'dt-center', targets = 0:7))
+)) %>% 
+  formatPercentage(columns = c(5,6,7,8), digits = 2)
+
+```
+
+```{r warning=FALSE, message=FALSE, echo=FALSE,fig.height=4, out.width = '100%'}
+
+plotSum <- summaryTbl %>% select(`Avg Compressions in Target`, `Avg Depth in Target`,
+                                 `Avg Rate in Target`) %>%
+  gather("Measure", "Value") %>%
+  mutate(
+  fi = if_else(Value >= .8,"Y","N")
+  )
+
+plotSum %>%
+  ggplot(aes(Measure, Value, group = Measure, color = fi)) +
+  scale_colour_manual(values = c("white","springgreen3"))+
+  geom_bar(stat = "identity", fill = "dodgerblue4", alpha = .6) +
+  geom_text(aes(label = paste(round(Value*100),"%",sep = ""), vjust = 1), size = 3) + 
+  theme_classic() + 
+  theme(axis.line.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text = element_text(color = "black"),
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position = "none", )  +
+  scale_y_continuous(labels = scales::percent,
+                     limits = c(0,1),
+                     position = "left") +
+  geom_hline(yintercept = .8, color = "springgreen3", linetype = "dashed")  + 
+  geom_text(aes(y = .85, x = 1),
+            label = paste(.8*100,"% Goal",sep = ""), color = "springgreen4") +
+  labs(title = "Overall Performance")
+  
+
+```
+
+
+### Difference by Duration?
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.height=4, out.width = '100%'}
+
+pd <- zollData %>% select(`Time in CPR`, `Compressions in Target`, `Depth In Target Prop`,
+                    `Rate in Target Prop`, record) %>%
+  mutate(`Time in CPR` = as.numeric(`Time in CPR`)/60) %>%
+  gather(key = "Measure", value = "Value", c(-`Time in CPR`,-record)) %>%
+  mutate(
+  fi = if_else(Value >= .8,"Y","N")
+  ) %>%
+  mutate(
+  `CPR Duration` = case_when(
+    as.numeric(`Time in CPR`) < 10 ~ "Under 10 Mins",
+    TRUE ~ "Over 10 Mins"
+  ),
+  `CPR Duration` = factor(`CPR Duration`, levels = c("Under 10 Mins", "Over 10 Mins"))
+) 
+pd %>%
+  ggplot(aes(x = `Time in CPR`, y = Value, color = fi, fill = `CPR Duration`)) + 
+  scale_colour_manual(values = c("black","springgreen3")) +
+  scale_fill_manual(values = c("cyan","yellow")) +
+  geom_point(shape = 21) +
+  facet_grid(cols = vars(Measure)) + 
+  theme(axis.line.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text = element_text(color = "black"),
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position = "bottom")  +
+  scale_x_continuous(breaks = c(5,10,15,20,30,40)) +
+  xlab("Minutes") + 
+  geom_hline(yintercept = .8, color = "springgreen3", linetype = "dashed") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                     breaks = c(0,.25,.5,.75,.8,1)) + 
+  xlab("Minutes") +
+  guides(color = FALSE)
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summaryTbl2 <- zollData %>% mutate(
+  `CPR Duration` = case_when(
+    as.numeric(`Time in CPR`) < 600 ~ "Under 10 Mins",
+    TRUE ~ "Over 10 Mins"
+  ),
+  `CPR Duration` = factor(`CPR Duration`, levels = c("Under 10 Mins", "Over 10 Mins"))
+) %>% group_by(`CPR Duration`) %>%
+  summarise(`CPR Cases` = n(),
+            `Avg Compresion Depth (inches)` = round(mean(`Mean Compresion Depth`, na.rm = TRUE),2),
+            `Avg Compression Rate (comp/min)` = round(mean(`Mean Compression Rate`, na.rm = TRUE),2),
+            `Avg Time in CPR` = round(mean(`Time in CPR`, na.rm = TRUE),2),
+            `Avg Time in Compressions` = round(mean(`Time in Compressions Prop`, na.rm = TRUE),4),
+            `Avg Compressions in Target` = round(mean(`Compressions in Target`, na.rm = TRUE),4),
+            `Avg Depth in Target` = round(mean(`Depth In Target Prop`, na.rm = TRUE),4),
+            `Avg Rate in Target` = round(mean(`Rate in Target Prop`, na.rm = TRUE),4)) %>%
+  mutate(`Avg Time in CPR` = paste(floor(as.numeric(`Avg Time in CPR`)/60),":", str_pad(string = round(as.numeric(`Avg Time in CPR`)%%60),width = 2,side = "left",pad = "0"), sep = "")) %>%
+  rename(`Avg Time in CPR (min:sec)` = `Avg Time in CPR`)
+
+summaryTbl2 %>%
+  datatable(rownames = FALSE,filter = 'none',editable = FALSE,
+            options = list(
+  searching = FALSE,
+  ordering = FALSE,
+  paging = FALSE,
+  bInfo = FALSE,
+  columnDefs = list(list(className = 'dt-center', targets = 0:8))
+)) %>% 
+  formatPercentage(columns = c(6,7,8,9), digits = 2)
+
+```
+
+
+### CPR Results by Case  {.tabset .tabset-fade .tabset-pills} 
+
+#### Compressions in Target
+
+```{r warning=FALSE, message=FALSE, echo=FALSE,fig.height=4, out.width = '100%'}
+percentBars("Compressions in Target")
+```
+
+
+#### Depth in Target
+
+```{r warning=FALSE, message=FALSE, echo=FALSE,fig.height=4, out.width = '100%'}
+percentBars("Depth In Target Prop", newName = "Depth in Target")
+```
+
+
+#### Rate in Target
+
+```{r warning=FALSE, message=FALSE, echo=FALSE,fig.height=4, out.width = '100%'}
+percentBars("Rate in Target Prop", newName = "Rate in Target")
+```
+
+
+#### Time in Compressions
+
+```{r warning=FALSE, message=FALSE, echo=FALSE,fig.height=4, out.width = '100%'}
+percentBars("Time in Compressions Prop", newName = "Time in Compressions", goal = .92)
+```
+
+
+#### Data
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+zollData %>% select(-record, -md) %>%
+  datatable(rownames = FALSE) %>%
+  formatPercentage(columns = c(9,10,15,16,17,21,22,23), digits = 2)
+
+
+```
+
+
+
+## *ZOLL* Instructions
+
+  * Device Use
+  * Software Use
+  * Reporting  
+  
+## AHA Guidlines  
+
+  * Overview
+  * Flowcharts
+  * Useful Links  
+
+## Survey Results
+
+<center><iframe src="https://www.surveymonkey.com/stories/SM-PV5Y7W22/" width="900" height="780" style="border: none;"></iframe></center>
+
+
+## Education Sign-Off
+
+<center><iframe src="https://docs.google.com/forms/d/e/1FAIpQLSeJdgBJVK6nQrKK3-3GBXcVsZnVu24YGokEhBCeeXQkfwgTJA/viewform?embedded=true" width="640" height="641" frameborder="0" marginheight="0" marginwidth="0">Loading…</iframe></center>
+
+
+
+
+
